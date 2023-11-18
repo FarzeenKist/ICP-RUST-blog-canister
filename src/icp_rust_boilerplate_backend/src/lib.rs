@@ -253,7 +253,7 @@ thread_local! {
 }
 
 #[ic_cdk::update]
-fn create_game() -> Result<usize, Error> {
+fn create_game() -> Result<String, Error> {
     GAMES.with(|g| {
         let mut games = g.borrow_mut();
         let running_game = games.0.iter().find(|game| {
@@ -266,9 +266,9 @@ fn create_game() -> Result<usize, Error> {
                 msg: "you have a pending game to play!".to_string(),
             }),
             None => {
-                let id = StableString(ulid::Ulid::new().to_string());
+                let id = ulid::Ulid::new().to_string();
                 let game = Game {
-                    id,
+                    id: StableString(id),
                     creator: StableString(ic_cdk::caller().to_string()),
                     opponent: None,
                     state: GameState::WaitingForOpponent,
@@ -277,7 +277,8 @@ fn create_game() -> Result<usize, Error> {
                     turn: GamePlayer::Creator,
                 };
                 games.0.push(game);
-                Ok(games.0.len() - 1)
+
+                Ok(id)
             }
         }
     })
@@ -289,12 +290,14 @@ fn get_games() -> StableVec<Game> {
 }
 
 #[ic_cdk::query]
-fn get_game(game_id: usize) -> Option<Game> {
-    _get_game(game_id).cloned()
-}
-
-fn _get_game<'a>(game_id: usize) -> Option<&'a Game> {
-    GAMES.with(|g| g.borrow().0.get(game_id))
+fn get_game(game_id: String) -> Option<Game> {
+    GAMES.with(|g| {
+        g.borrow()
+            .0
+            .iter()
+            .find(|game| game.id == StableString(game_id))
+            .cloned()
+    })
 }
 
 #[ic_cdk::query]
@@ -313,10 +316,10 @@ fn get_player_games() -> StableVec<Game> {
 }
 
 #[ic_cdk::update]
-fn play_move(game_id: usize, game_move: String) -> Result<(), Error> {
+fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
     GAMES.with(|g| {
         let mut games = g.borrow_mut();
-        let game = match games.0.get_mut(game_id) {
+        let game = match games.0.iter_mut().find(|game| game.id == StableString(game_id.clone())) {
             Some(game) => game,
             None => {
                 return Err(Error::InvalidGameId {
@@ -338,7 +341,7 @@ fn play_move(game_id: usize, game_move: String) -> Result<(), Error> {
             _ => (),
         }
 
-        if ic_cdk::caller().to_string() != game.creator
+        if StableString(ic_cdk::caller().to_string()) != game.creator
             && Some(StableString(ic_cdk::caller().to_string())) != game.opponent
         {
             return Err(Error::InvalidPermission {
