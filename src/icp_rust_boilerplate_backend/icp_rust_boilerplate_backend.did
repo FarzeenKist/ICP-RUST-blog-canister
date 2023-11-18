@@ -1,3 +1,18 @@
+type CoordinateState = variant { O; X; Empty };
+type Error = variant {
+  InvalidCoordinates : record { msg : text };
+  PendingGame : record { msg : text };
+};
+type Game = record {
+  creator : text;
+  state : GameState;
+  board : vec CoordinateState;
+  opponent : opt text;
+};
+type GameState = variant { Finished; WaitingForOpponent; InProgress };
+type Result = variant { Ok : bool; Err : Error };
 service : {
-    "greet": (text) -> (text) query;
+  create_game : () -> (Result);
+  get_games : () -> (vec Game) query;
+  get_player_games : () -> (vec Game) query;
 }
