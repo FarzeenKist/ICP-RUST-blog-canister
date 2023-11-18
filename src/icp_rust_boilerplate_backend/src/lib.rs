@@ -8,8 +8,10 @@ use std::{borrow::Cow, cell::RefCell, slice::SliceIndex, vec::IntoIter};
 enum Error {
     InvalidGameId { msg: String },
     InvalidCoordinates { msg: String },
+    InvalidTurn { msg: String },
     PendingGame { msg: String },
     FinishedGame { msg: String },
+    InvalidPermission { msg: String },
 }
 
 type Memory =
@@ -23,7 +25,7 @@ enum GameState {
     Finished,
 }
 
-#[derive(candid::CandidType, Clone, Serialize, Deserialize, Default)]
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 enum CoordinateState {
     #[default]
     Empty,
@@ -31,7 +33,7 @@ enum CoordinateState {
     O,
 }
 
-#[derive(candid::CandidType, Clone, Serialize, Deserialize)]
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, PartialEq, Eq)]
 enum GamePlayer {
     Creator,
     Opponent,
@@ -46,11 +48,13 @@ struct GameMove {
 
 #[derive(candid::CandidType, Clone, Serialize, Deserialize)]
 struct Game {
+    id: StableString,
     creator: StableString,
     opponent: Option<StableString>,
     state: GameState,
     board: Vec<CoordinateState>,
     moves: Vec<GameMove>,
+    turn: GamePlayer,
 }
 
 impl ic_stable_structures::Storable for GameState {
@@ -262,12 +266,15 @@ fn create_game() -> Result<usize, Error> {
                 msg: "you have a pending game to play!".to_string(),
             }),
             None => {
+                let id = StableString(ulid::Ulid::new().to_string());
                 let game = Game {
+                    id,
                     creator: StableString(ic_cdk::caller().to_string()),
                     opponent: None,
                     state: GameState::WaitingForOpponent,
                     board: vec![CoordinateState::Empty; 9],
-                    moves: vec![]
+                    moves: vec![],
+                    turn: GamePlayer::Creator,
                 };
                 games.0.push(game);
                 Ok(games.0.len() - 1)
@@ -279,6 +286,15 @@ fn create_game() -> Result<usize, Error> {
 #[ic_cdk::query]
 fn get_games() -> StableVec<Game> {
     GAMES.with(|g| g.borrow().clone())
+}
+
+#[ic_cdk::query]
+fn get_game(game_id: usize) -> Option<Game> {
+    _get_game(game_id).cloned()
+}
+
+fn _get_game<'a>(game_id: usize) -> Option<&'a Game> {
+    GAMES.with(|g| g.borrow().0.get(game_id))
 }
 
 #[ic_cdk::query]
@@ -322,8 +338,26 @@ fn play_move(game_id: usize, game_move: String) -> Result<(), Error> {
             _ => (),
         }
 
+        if ic_cdk::caller().to_string() != game.creator
+            && Some(StableString(ic_cdk::caller().to_string())) != game.opponent
+        {
+            return Err(Error::InvalidPermission {
+                msg: "You don't have permission to play this game".to_string(),
+            });
+        }
+
+        if game.turn == GamePlayer::Creator
+            && game.creator != StableString(ic_cdk::caller().to_string())
+            || game.turn == GamePlayer::Opponent
+                && game.opponent != Some(StableString(ic_cdk::caller().to_string()))
+        {
+            return Err(Error::InvalidTurn {
+                msg: "It's not your turn yet".to_string(),
+            });
+        }
+
         let invalid_coordinates_err = Error::InvalidCoordinates {
-            msg: "invalid coordinates".to_string(),
+            msg: "Invalid coordinates".to_string(),
         };
 
         let mut iter = game_move.split(',').map(|s| s.parse::<u8>());
@@ -352,8 +386,45 @@ fn play_move(game_id: usize, game_move: String) -> Result<(), Error> {
             x,
             y,
         };
-        game.board[x + y * (y + 1)] = game_coordinate;
+        if game.board[(3 * y + x) as usize] != CoordinateState::Empty {
+            return Err(Error::InvalidCoordinates {
+                msg: "Coordinate has already been played in".to_string(),
+            });
+        }
+
+        game.board[(3 * y + x) as usize] = game_coordinate;
         game.moves.push(game_move);
+
+        if game.board.iter().any(|x| *x == CoordinateState::Empty) {
+            game.turn = match game.turn {
+                GamePlayer::Creator => GamePlayer::Opponent,
+                GamePlayer::Opponent => GamePlayer::Creator,
+            };
+        } else {
+            game.state = GameState::Finished;
+        }
+
+        Ok(())
+    })
+}
+
+#[ic_cdk::update]
+fn delete_game(game_id: usize) -> Result<(), Error> {
+    GAMES.with(|g| {
+        let mut games = g.borrow_mut();
+        let game = match games.0.get_mut(game_id) {
+            Some(game) => game,
+            None => {
+                return Err(Error::InvalidGameId {
+                    msg: "invalid game id".to_string(),
+                })
+            }
+        };
+        if game.creator != StableString(ic_cdk::caller().to_string()) {
+            return Err(Error::InvalidPermission {
+                msg: "You don't have permission to delete this game".to_string(),
+            });
+        }
 
         Ok(())
     })

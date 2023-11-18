@@ -19,6 +19,7 @@ type Result = variant { Ok : nat64; Err : Error };
 type Result_1 = variant { Ok; Err : Error };
 service : {
   create_game : () -> (Result);
+  get_game : (nat64) -> (opt Game) query;
   get_games : () -> (vec Game) query;
   get_player_games : () -> (vec Game) query;
   play_move : (nat64, text) -> (Result_1);
