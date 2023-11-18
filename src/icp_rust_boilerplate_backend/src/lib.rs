@@ -6,8 +6,10 @@ use std::{borrow::Cow, cell::RefCell, slice::SliceIndex, vec::IntoIter};
 
 #[derive(candid::CandidType, Deserialize, Serialize, Debug)]
 enum Error {
+    InvalidGameId { msg: String },
     InvalidCoordinates { msg: String },
     PendingGame { msg: String },
+    FinishedGame { msg: String },
 }
 
 type Memory =
@@ -48,7 +50,7 @@ struct Game {
     opponent: Option<StableString>,
     state: GameState,
     board: Vec<CoordinateState>,
-    // moves: Vec<GameMove, Memory>,
+    moves: Vec<GameMove>,
 }
 
 impl ic_stable_structures::Storable for GameState {
@@ -244,11 +246,34 @@ thread_local! {
 
     static GAMES: RefCell<StableVec<Game>> =
         RefCell::new(StableVec(vec![]));
+}
 
-    static PLAYER_GAMES: RefCell<ic_stable_structures::StableBTreeMap<StableString, StableVec<u8>, Memory>> =
-        RefCell::new(ic_stable_structures::StableBTreeMap::init(
-            MEMORY_MANAGER.with(|m| m.borrow().get(memory_manager::MemoryId::new(1)))
-        ))
+#[ic_cdk::update]
+fn create_game() -> Result<usize, Error> {
+    GAMES.with(|g| {
+        let mut games = g.borrow_mut();
+        let running_game = games.0.iter().find(|game| {
+            game.creator == StableString(ic_cdk::caller().to_string())
+                && (game.state == GameState::WaitingForOpponent
+                    || game.state == GameState::InProgress)
+        });
+        match running_game {
+            Some(_) => Err(Error::PendingGame {
+                msg: "you have a pending game to play!".to_string(),
+            }),
+            None => {
+                let game = Game {
+                    creator: StableString(ic_cdk::caller().to_string()),
+                    opponent: None,
+                    state: GameState::WaitingForOpponent,
+                    board: vec![CoordinateState::Empty; 9],
+                    moves: vec![]
+                };
+                games.0.push(game);
+                Ok(games.0.len() - 1)
+            }
+        }
+    })
 }
 
 #[ic_cdk::query]
@@ -258,73 +283,80 @@ fn get_games() -> StableVec<Game> {
 
 #[ic_cdk::query]
 fn get_player_games() -> StableVec<Game> {
-    let games = PLAYER_GAMES.with(|pg| {
-        pg.borrow()
-            .get(&StableString(ic_cdk::caller().to_string()))
-            .unwrap()
+    GAMES.with(|g| {
+        let games = g
+            .borrow()
             .0
             .iter()
-            .map(|game_index| {
-                GAMES.with(|g| {
-                    let _game = g.borrow();
-                    let game = _game.0.get(*game_index as usize).unwrap();
-                    game.clone()
-                })
-            })
-            .collect::<Vec<Game>>()
-    });
+            .cloned()
+            .filter(|game| game.creator == StableString(ic_cdk::caller().to_string()))
+            .collect::<Vec<Game>>();
 
-    StableVec(games)
+        StableVec(games)
+    })
 }
 
 #[ic_cdk::update]
-fn create_game() -> Result<bool, Error> {
-    match PLAYER_GAMES.with(|g| g.borrow().get(&StableString(ic_cdk::caller().to_string()))) {
-        Some(games) => {
-            let running_game = games.0.iter().find(|game_index| {
-                GAMES.with(|g| {
-                    let _game = g.borrow();
-                    let game = _game.0.get(**game_index as usize).unwrap();
-                    game.state == GameState::WaitingForOpponent
-                        || game.state == GameState::InProgress
-                })
-            });
-            match running_game {
-                Some(_) => {
-                    return Err(Error::PendingGame {
-                        msg: "you have a pending game to play!".to_string(),
-                    })
-                }
-                None => (),
-            }
-        }
-        None => {
-            let games = StableVec(vec![]);
-            PLAYER_GAMES.with(|g| {
-                g.borrow_mut()
-                    .insert(StableString(ic_cdk::caller().to_string()), games)
-            });
-        }
-    };
-
-    let game = Game {
-        creator: StableString(ic_cdk::caller().to_string()),
-        opponent: None,
-        state: GameState::WaitingForOpponent,
-        board: vec![CoordinateState::Empty; 9],
-    };
+fn play_move(game_id: usize, game_move: String) -> Result<(), Error> {
     GAMES.with(|g| {
-        g.borrow_mut().0.push(game);
-        PLAYER_GAMES.with(|pg| {
-            pg.borrow_mut()
-                .get(&StableString(ic_cdk::caller().to_string()))
-                .unwrap()
-                .0
-                .push(g.borrow().0.len() as u8 - 1);
-        });
-    });
+        let mut games = g.borrow_mut();
+        let game = match games.0.get_mut(game_id) {
+            Some(game) => game,
+            None => {
+                return Err(Error::InvalidGameId {
+                    msg: "invalid game id".to_string(),
+                })
+            }
+        };
 
-    Ok(true)
+        match game.state {
+            GameState::WaitingForOpponent => {
+                game.opponent = Some(StableString(ic_cdk::caller().to_string()));
+                game.state = GameState::InProgress;
+            }
+            GameState::Finished => {
+                return Err(Error::FinishedGame {
+                    msg: "game has finished".to_string(),
+                })
+            }
+            _ => (),
+        }
+
+        let invalid_coordinates_err = Error::InvalidCoordinates {
+            msg: "invalid coordinates".to_string(),
+        };
+
+        let mut iter = game_move.split(',').map(|s| s.parse::<u8>());
+        let x = match iter.next() {
+            Some(x) => match x {
+                Ok(x) => x,
+                Err(_) => return Err(invalid_coordinates_err),
+            },
+            None => return Err(invalid_coordinates_err),
+        };
+        let y = match iter.next() {
+            Some(x) => match x {
+                Ok(x) => x,
+                Err(_) => return Err(invalid_coordinates_err),
+            },
+            None => return Err(invalid_coordinates_err),
+        };
+
+        if x > 2 || y > 2 {
+            return Err(invalid_coordinates_err);
+        }
+
+        let game_coordinate = CoordinateState::X;
+        let game_move = GameMove {
+            player: GamePlayer::Creator,
+            x,
+            y,
+        };
+        game.board[x + y * (y + 1)] = game_coordinate;
+        game.moves.push(game_move);
+
+        Ok(())
+    })
 }
 
 ic_cdk::export_candid!();

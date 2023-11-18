@@ -1,18 +1,25 @@
 type CoordinateState = variant { O; X; Empty };
 type Error = variant {
   InvalidCoordinates : record { msg : text };
+  InvalidGameId : record { msg : text };
   PendingGame : record { msg : text };
+  FinishedGame : record { msg : text };
 };
 type Game = record {
+  moves : vec GameMove;
   creator : text;
   state : GameState;
   board : vec CoordinateState;
   opponent : opt text;
 };
+type GameMove = record { x : nat8; y : nat8; player : GamePlayer };
+type GamePlayer = variant { Opponent; Creator };
 type GameState = variant { Finished; WaitingForOpponent; InProgress };
-type Result = variant { Ok : bool; Err : Error };
+type Result = variant { Ok : nat64; Err : Error };
+type Result_1 = variant { Ok; Err : Error };
 service : {
   create_game : () -> (Result);
   get_games : () -> (vec Game) query;
   get_player_games : () -> (vec Game) query;
+  play_move : (nat64, text) -> (Result_1);
 }
