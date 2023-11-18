@@ -2,7 +2,7 @@
 extern crate serde;
 use candid::{Decode, Encode};
 use ic_stable_structures::{memory_manager, BoundedStorable};
-use std::{borrow::Cow, cell::RefCell, slice::SliceIndex, vec::IntoIter};
+use std::{borrow::Cow, cell::RefCell};
 
 #[derive(candid::CandidType, Deserialize, Serialize, Debug)]
 enum Error {
@@ -168,24 +168,6 @@ impl ic_stable_structures::BoundedStorable for StableString {
     const IS_FIXED_SIZE: bool = false;
 }
 
-// #[derive(candid::CandidType)]
-//  struct StableVec<T: BoundedStorable, M: ic_stable_structures::Memory>(ic_stable_structures::StableVec<T, M>);
-//
-// impl ic_stable_structures::Storable for StableVec<StableString, Memory> {
-//     fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-//         Cow::Owned(Encode!(self).unwrap())
-//     }
-//
-//     fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-//         Decode!(bytes.as_ref(), Self).unwrap()
-//     }
-// }
-//
-// impl ic_stable_structures::BoundedStorable for StableVec<StableString, Memory> {
-//     const MAX_SIZE: u32 = 1024;
-//     const IS_FIXED_SIZE: bool = false;
-// }
-
 #[derive(candid::CandidType, Serialize, Deserialize, Clone)]
 struct StableVec<T: BoundedStorable>(Vec<T>);
 
@@ -266,9 +248,13 @@ fn create_game() -> Result<String, Error> {
                 msg: "you have a pending game to play!".to_string(),
             }),
             None => {
-                let id = ulid::Ulid::new().to_string();
+                let id = format!(
+                    "{}-{}",
+                    ic_cdk::caller().to_string(),
+                    games.0.len().to_string()
+                );
                 let game = Game {
-                    id: StableString(id),
+                    id: StableString(id.clone()),
                     creator: StableString(ic_cdk::caller().to_string()),
                     opponent: None,
                     state: GameState::WaitingForOpponent,
@@ -295,7 +281,7 @@ fn get_game(game_id: String) -> Option<Game> {
         g.borrow()
             .0
             .iter()
-            .find(|game| game.id == StableString(game_id))
+            .find(|game| game.id == StableString(game_id.clone()))
             .cloned()
     })
 }
@@ -319,7 +305,11 @@ fn get_player_games() -> StableVec<Game> {
 fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
     GAMES.with(|g| {
         let mut games = g.borrow_mut();
-        let game = match games.0.iter_mut().find(|game| game.id == StableString(game_id.clone())) {
+        let game = match games
+            .0
+            .iter_mut()
+            .find(|game| game.id == StableString(game_id.clone()))
+        {
             Some(game) => game,
             None => {
                 return Err(Error::InvalidGameId {
@@ -412,24 +402,24 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
 }
 
 #[ic_cdk::update]
-fn delete_game(game_id: usize) -> Result<(), Error> {
+fn delete_game(game_id: String) -> Result<(), Error> {
     GAMES.with(|g| {
         let mut games = g.borrow_mut();
-        let game = match games.0.get_mut(game_id) {
-            Some(game) => game,
-            None => {
-                return Err(Error::InvalidGameId {
-                    msg: "invalid game id".to_string(),
-                })
+        for (index, game) in games.clone().0.iter().enumerate() {
+            if game.id == StableString(game_id.clone()) {
+                if game.creator != StableString(ic_cdk::caller().to_string()) {
+                    return Err(Error::InvalidPermission {
+                        msg: "You don't have permission to delete this game".to_string(),
+                    });
+                }
+
+                games.0.remove(index);
             }
-        };
-        if game.creator != StableString(ic_cdk::caller().to_string()) {
-            return Err(Error::InvalidPermission {
-                msg: "You don't have permission to delete this game".to_string(),
-            });
         }
 
-        Ok(())
+        return Err(Error::InvalidGameId {
+            msg: "Invalid game id".to_string(),
+        });
     })
 }
 
