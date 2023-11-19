@@ -53,7 +53,6 @@ fn create_game() -> Result<String, Error> {
 }
 
 fn check_winner(board: &Vec<CoordinateState>) -> Option<GamePlayer> {
-    // Check rows
     for i in 0..3 {
         if board[i * 3] != CoordinateState::Empty
             && board[i * 3] == board[i * 3 + 1]
@@ -62,12 +61,11 @@ fn check_winner(board: &Vec<CoordinateState>) -> Option<GamePlayer> {
             return Some(match board[i * 3] {
                 CoordinateState::X => GamePlayer::Creator,
                 CoordinateState::O => GamePlayer::Opponent,
-                _ => unreachable!(), // Should not happen if the board is valid
+                _ => unreachable!(),
             });
         }
     }
 
-    // Check columns
     for i in 0..3 {
         if board[i] != CoordinateState::Empty
             && board[i] == board[i + 3]
@@ -81,7 +79,6 @@ fn check_winner(board: &Vec<CoordinateState>) -> Option<GamePlayer> {
         }
     }
 
-    // Check diagonals
     if board[0] != CoordinateState::Empty && board[0] == board[4] && board[0] == board[8] {
         return Some(match board[0] {
             CoordinateState::X => GamePlayer::Creator,
@@ -97,7 +94,6 @@ fn check_winner(board: &Vec<CoordinateState>) -> Option<GamePlayer> {
         });
     }
 
-    // No winner yet
     None
 }
 
@@ -260,9 +256,13 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
             return Err(invalid_coordinates_err);
         }
 
-        let game_coordinate = CoordinateState::X;
+        let game_coordinate = match game.turn {
+            GamePlayer::Creator => CoordinateState::X,
+            GamePlayer::Opponent => CoordinateState::O,
+        };
+
         let game_move = GameMove {
-            player: GamePlayer::Creator,
+            player: game.turn.clone(),
             x,
             y,
         };
@@ -284,7 +284,6 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
             game.state = GameState::Finished;
         }
 
-        // After updating the board, check for a winner
         if let Some(winner) = check_winner(&game.board) {
             game.state = GameState::Finished;
             game.winner = Some(winner);
