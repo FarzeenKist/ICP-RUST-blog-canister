@@ -2,6 +2,7 @@ type CoordinateState = variant { O; X; Empty };
 type Error = variant {
   InvalidCoordinates : record { msg : text };
   InvalidPermission : record { msg : text };
+  InvalidPage : record { msg : text };
   InvalidTurn : record { msg : text };
   InvalidGameId : record { msg : text };
   PendingGame : record { msg : text };
@@ -12,6 +13,7 @@ type Game = record {
   moves : vec GameMove;
   creator : text;
   turn : GamePlayer;
+  winner : opt GamePlayer;
   state : GameState;
   board : vec CoordinateState;
   opponent : opt text;
@@ -19,13 +21,24 @@ type Game = record {
 type GameMove = record { x : nat8; y : nat8; player : GamePlayer };
 type GamePlayer = variant { Opponent; Creator };
 type GameState = variant { Finished; WaitingForOpponent; InProgress };
+type PaginatedResponse = record {
+  data : vec Game;
+  meta : PaginatedResponseMeta;
+};
+type PaginatedResponseMeta = record {
+  total : nat64;
+  next : opt nat64;
+  page : nat64;
+  prev : opt nat64;
+  limit : nat64;
+};
 type Result = variant { Ok : text; Err : Error };
 type Result_1 = variant { Ok; Err : Error };
 service : {
   create_game : () -> (Result);
-  delete_game : (nat64) -> (Result_1);
+  delete_game : (text) -> (Result_1);
   get_game : (text) -> (opt Game) query;
-  get_games : () -> (vec Game) query;
-  get_player_games : () -> (vec Game) query;
+  get_games : (nat64) -> (opt PaginatedResponse) query;
+  get_player_games : (nat64) -> (opt PaginatedResponse) query;
   play_move : (text, text) -> (Result_1);
 }

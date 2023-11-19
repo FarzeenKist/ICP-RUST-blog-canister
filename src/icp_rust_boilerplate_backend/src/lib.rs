@@ -1,229 +1,10 @@
 #[macro_use]
 extern crate serde;
-use candid::{Decode, Encode};
-use ic_stable_structures::{memory_manager, BoundedStorable};
-use std::{borrow::Cow, cell::RefCell};
+use ic_stable_structures::memory_manager;
+use std::cell::RefCell;
 
-#[derive(candid::CandidType, Deserialize, Serialize, Debug)]
-enum Error {
-    InvalidGameId { msg: String },
-    InvalidCoordinates { msg: String },
-    InvalidTurn { msg: String },
-    PendingGame { msg: String },
-    FinishedGame { msg: String },
-    InvalidPermission { msg: String },
-}
-
-type Memory =
-    ic_stable_structures::memory_manager::VirtualMemory<ic_stable_structures::DefaultMemoryImpl>;
-type IdCell = ic_stable_structures::Cell<u64, Memory>;
-
-#[derive(candid::CandidType, Clone, Serialize, Deserialize, PartialEq, Eq)]
-enum GameState {
-    WaitingForOpponent,
-    InProgress,
-    Finished,
-}
-
-#[derive(candid::CandidType, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-enum CoordinateState {
-    #[default]
-    Empty,
-    X,
-    O,
-}
-
-#[derive(candid::CandidType, Clone, Serialize, Deserialize, PartialEq, Eq)]
-enum GamePlayer {
-    Creator,
-    Opponent,
-}
-
-#[derive(candid::CandidType, Clone, Serialize, Deserialize)]
-struct GameMove {
-    player: GamePlayer,
-    x: u8,
-    y: u8,
-}
-
-#[derive(candid::CandidType, Clone, Serialize, Deserialize)]
-struct Game {
-    id: StableString,
-    creator: StableString,
-    opponent: Option<StableString>,
-    state: GameState,
-    board: Vec<CoordinateState>,
-    moves: Vec<GameMove>,
-    turn: GamePlayer,
-}
-
-impl ic_stable_structures::Storable for GameState {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for GameState {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for CoordinateState {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for CoordinateState {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for GamePlayer {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for GamePlayer {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for GameMove {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for GameMove {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for Game {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for Game {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-#[derive(candid::CandidType, Serialize, Deserialize, Clone, PartialEq, PartialOrd, Eq, Ord)]
-struct StableString(String);
-
-// impl From<&str> for StableString {
-//     fn from(value: &str) -> Self {
-//         StableString(value.to_string())
-//     }
-// }
-//
-// impl From<String> for StableString {
-//     fn from(value: String) -> Self {
-//         StableString(value.to_string())
-//     }
-// }
-//
-// impl From<candid::Principal> for StableString {
-//     fn from(principal: candid::Principal) -> Self {
-//         StableString::from(principal.to_string())
-//     }
-// }
-
-impl ic_stable_structures::Storable for StableString {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for StableString {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-#[derive(candid::CandidType, Serialize, Deserialize, Clone)]
-struct StableVec<T: BoundedStorable>(Vec<T>);
-
-// impl IntoIterator for StableVec<StableString> {
-//     type Item = StableString;
-//     type IntoIter = IntoIter<Self::Item>;
-//
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.0.into_iter()
-//     }
-// }
-
-impl ic_stable_structures::Storable for StableVec<StableString> {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for StableVec<StableString> {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for StableVec<Game> {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for StableVec<Game> {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
-
-impl ic_stable_structures::Storable for StableVec<u8> {
-    fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
-        Cow::Owned(Encode!(self).unwrap())
-    }
-
-    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
-        Decode!(bytes.as_ref(), Self).unwrap()
-    }
-}
-
-impl ic_stable_structures::BoundedStorable for StableVec<u8> {
-    const MAX_SIZE: u32 = 1024;
-    const IS_FIXED_SIZE: bool = false;
-}
+mod model;
+use model::*;
 
 thread_local! {
     static MEMORY_MANAGER: RefCell<memory_manager::MemoryManager<ic_stable_structures::DefaultMemoryImpl>> = RefCell::new(
@@ -261,6 +42,7 @@ fn create_game() -> Result<String, Error> {
                     board: vec![CoordinateState::Empty; 9],
                     moves: vec![],
                     turn: GamePlayer::Creator,
+                    winner: None,
                 };
                 games.0.push(game);
 
@@ -270,9 +52,92 @@ fn create_game() -> Result<String, Error> {
     })
 }
 
+fn check_winner(board: &Vec<CoordinateState>) -> Option<GamePlayer> {
+    // Check rows
+    for i in 0..3 {
+        if board[i * 3] != CoordinateState::Empty
+            && board[i * 3] == board[i * 3 + 1]
+            && board[i * 3] == board[i * 3 + 2]
+        {
+            return Some(match board[i * 3] {
+                CoordinateState::X => GamePlayer::Creator,
+                CoordinateState::O => GamePlayer::Opponent,
+                _ => unreachable!(), // Should not happen if the board is valid
+            });
+        }
+    }
+
+    // Check columns
+    for i in 0..3 {
+        if board[i] != CoordinateState::Empty
+            && board[i] == board[i + 3]
+            && board[i] == board[i + 6]
+        {
+            return Some(match board[i] {
+                CoordinateState::X => GamePlayer::Creator,
+                CoordinateState::O => GamePlayer::Opponent,
+                _ => unreachable!(),
+            });
+        }
+    }
+
+    // Check diagonals
+    if board[0] != CoordinateState::Empty && board[0] == board[4] && board[0] == board[8] {
+        return Some(match board[0] {
+            CoordinateState::X => GamePlayer::Creator,
+            CoordinateState::O => GamePlayer::Opponent,
+            _ => unreachable!(),
+        });
+    }
+    if board[2] != CoordinateState::Empty && board[2] == board[4] && board[2] == board[6] {
+        return Some(match board[2] {
+            CoordinateState::X => GamePlayer::Creator,
+            CoordinateState::O => GamePlayer::Opponent,
+            _ => unreachable!(),
+        });
+    }
+
+    // No winner yet
+    None
+}
+
+const PAGE_LIMIT: usize = 10;
+
 #[ic_cdk::query]
-fn get_games() -> StableVec<Game> {
-    GAMES.with(|g| g.borrow().clone())
+fn get_games(page: usize) -> Option<PaginatedResponse<Game>> {
+    let start = page * PAGE_LIMIT;
+    let end = start + PAGE_LIMIT;
+    GAMES.with(|g| {
+        let games = g.borrow();
+
+        if start >= games.0.len() {
+            return None;
+        }
+
+        let response_meta = PaginatedResponseMeta {
+            prev: if page > 1 { Some(page - 1) } else { None },
+            next: if end < games.0.len() {
+                Some(page + 1)
+            } else {
+                None
+            },
+            total: games.0.len(),
+            page,
+            limit: PAGE_LIMIT,
+        };
+        let response = PaginatedResponse {
+            data: games
+                .0
+                .iter()
+                .skip(start)
+                .take(PAGE_LIMIT)
+                .cloned()
+                .collect(),
+            meta: response_meta,
+        };
+
+        Some(response)
+    })
 }
 
 #[ic_cdk::query]
@@ -287,17 +152,39 @@ fn get_game(game_id: String) -> Option<Game> {
 }
 
 #[ic_cdk::query]
-fn get_player_games() -> StableVec<Game> {
+fn get_player_games(page: usize) -> Option<PaginatedResponse<Game>> {
+    let start = page * PAGE_LIMIT;
+    let end = start + PAGE_LIMIT;
     GAMES.with(|g| {
         let games = g
             .borrow()
             .0
             .iter()
-            .cloned()
             .filter(|game| game.creator == StableString(ic_cdk::caller().to_string()))
-            .collect::<Vec<Game>>();
+            .cloned()
+            .collect::<Vec<_>>();
 
-        StableVec(games)
+        if start >= games.len() {
+            return None;
+        }
+
+        let response_meta = PaginatedResponseMeta {
+            prev: if page > 1 { Some(page - 1) } else { None },
+            next: if end < games.len() {
+                Some(page + 1)
+            } else {
+                None
+            },
+            total: games.len(),
+            page,
+            limit: PAGE_LIMIT,
+        };
+        let response = PaginatedResponse {
+            data: games.iter().skip(start).take(PAGE_LIMIT).cloned().collect(),
+            meta: response_meta,
+        };
+
+        Some(response)
     })
 }
 
@@ -397,6 +284,12 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
             game.state = GameState::Finished;
         }
 
+        // After updating the board, check for a winner
+        if let Some(winner) = check_winner(&game.board) {
+            game.state = GameState::Finished;
+            game.winner = Some(winner);
+        }
+
         Ok(())
     })
 }
@@ -405,21 +298,29 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
 fn delete_game(game_id: String) -> Result<(), Error> {
     GAMES.with(|g| {
         let mut games = g.borrow_mut();
-        for (index, game) in games.clone().0.iter().enumerate() {
-            if game.id == StableString(game_id.clone()) {
-                if game.creator != StableString(ic_cdk::caller().to_string()) {
-                    return Err(Error::InvalidPermission {
-                        msg: "You don't have permission to delete this game".to_string(),
-                    });
-                }
-
-                games.0.remove(index);
+        let index = match games
+            .0
+            .iter()
+            .position(|game| game.id == StableString(game_id.clone()))
+        {
+            Some(index) => index,
+            None => {
+                return Err(Error::InvalidGameId {
+                    msg: "Invalid game id".to_string(),
+                })
             }
+        };
+        let game = games.0.get(index).unwrap();
+
+        if game.creator != StableString(ic_cdk::caller().to_string()) {
+            return Err(Error::InvalidPermission {
+                msg: "You don't have permission to delete this game".to_string(),
+            });
         }
 
-        return Err(Error::InvalidGameId {
-            msg: "Invalid game id".to_string(),
-        });
+        games.0.remove(index);
+
+        Ok(())
     })
 }
 
