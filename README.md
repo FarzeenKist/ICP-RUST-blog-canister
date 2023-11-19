@@ -33,5 +33,8 @@ I decided on this project because I wanted to deploy a canister on the Internet 
 - I added in some more functions for convenience. They pretty much do what their names imply. Note that the `get_games` and the `get_player_games` function both take in a page number as their sole argument
 ![img](./assets/screenshot-4.png)
 
+## Check it out
+You can interact with it here: [https://a4gq6-oaaaa-aaaab-qaa4q-cai.raw.icp0.io/?id=tt2ty-dyaaa-aaaao-a2u2q-cai](https://a4gq6-oaaaa-aaaab-qaa4q-cai.raw.icp0.io/?id=tt2ty-dyaaa-aaaao-a2u2q-cai)
+
 ## Credits
 - [Adophilus](https://github.com/Adophilus)
