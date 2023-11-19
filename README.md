@@ -30,5 +30,8 @@ I decided on this project because I wanted to deploy a canister on the Internet 
 
 - Take turns in playing the game until a winner emerges... or the game ends in a draw; either way works 🤷
 
+- I added in some more functions for convenience. They pretty much do what their names imply. Note that the `get_games` and the `get_player_games` function both take in a page number as their sole argument
+![img](./assets/screenshot-4.png)
+
 ## Credits
 - [Adophilus](https://github.com/Adophilus)
