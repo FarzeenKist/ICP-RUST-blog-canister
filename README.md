@@ -1,5 +1,7 @@
 # TicTacToe
 
+![img](./assets/logo.png)
+
 <p align="center">
 ![img](./assets/logo.png)
 </p>
