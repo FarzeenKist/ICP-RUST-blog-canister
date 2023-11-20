@@ -6,13 +6,52 @@ use std::cell::RefCell;
 mod model;
 use model::*;
 
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Debug)]
+pub struct Game {
+    pub id: StableString,
+    pub creator: StableString,
+    pub opponent: Option<StableString>,
+    pub state: GameState,
+    pub board: Vec<CoordinateState>,
+    pub moves: Vec<GameMove>,
+    pub turn: GamePlayer,
+    pub winner: Option<GamePlayer>,
+}
+
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Debug)]
+pub enum GameState {
+    WaitingForOpponent,
+    InProgress,
+    Finished,
+}
+
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Default, Debug)]
+pub enum CoordinateState {
+    #[default]
+    Empty,
+    X,
+    O,
+}
+
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Debug)]
+pub enum GamePlayer {
+    Creator,
+    Opponent,
+}
+
+#[derive(candid::CandidType, Clone, Serialize, Deserialize, Debug)]
+pub struct GameMove {
+    pub player: GamePlayer,
+    pub x: u8,
+    pub y: u8,
+}
+
 thread_local! {
     static MEMORY_MANAGER: RefCell<memory_manager::MemoryManager<ic_stable_structures::DefaultMemoryImpl>> = RefCell::new(
         memory_manager::MemoryManager::init(ic_stable_structures::DefaultMemoryImpl::default())
     );
 
-    static GAMES: RefCell<StableVec<Game>> =
-        RefCell::new(StableVec(vec![]));
+    static GAMES: RefCell<StableVec<Game>> = RefCell::new(StableVec(vec![]));
 }
 
 #[ic_cdk::update]
@@ -207,6 +246,13 @@ fn play_move(game_id: String, game_move: String) -> Result<(), Error> {
                 game.state = GameState::InProgress;
             }
             GameState::Finished => {
+
+        match game.state {
+            GameState::WaitingForOpponent => {
+                game.opponent = Some(StableString(ic_cdk::caller().to_string()));
+                game.state = GameState::InProgress;
+            }
+            GameState::Finished => {
                 return Err(Error::FinishedGame {
                     msg: "game has finished".to_string(),
                 })
@@ -309,6 +355,21 @@ fn delete_game(game_id: String) -> Result<(), Error> {
                 })
             }
         };
+
+       match game.state {
+            GameState::WaitingForOpponent => {
+                game.opponent = Some(StableString(ic_cdk::caller().to_string()));
+                game.state = GameState::InProgress;
+            }
+            GameState::Finished => {
+                return Err(Error::FinishedGame {
+                    msg: "game has finished".to_string(),
+                })
+            }
+            _ => (),
+        }
+
+ 
         let game = games.0.get(index).unwrap();
 
         if game.creator != StableString(ic_cdk::caller().to_string()) {
