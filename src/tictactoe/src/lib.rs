@@ -2,6 +2,7 @@
 extern crate serde;
 use ic_stable_structures::memory_manager;
 use std::cell::RefCell;
+use ic_stable_structures::memory_manager::MemoryId;
 
 mod model;
 use model::*;
@@ -13,6 +14,11 @@ thread_local! {
 
     static GAMES: RefCell<StableVec<Game>> =
         RefCell::new(StableVec(vec![]));
+    
+    static ID_COUNTER: RefCell<IdCell> = RefCell::new(
+        IdCell::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(0))), 0)
+            .expect("Cannot create a counter")
+    );
 }
 
 #[ic_cdk::update]
@@ -29,10 +35,16 @@ fn create_game() -> Result<String, Error> {
                 msg: "you have a pending game to play!".to_string(),
             }),
             None => {
+                let id = ID_COUNTER
+                .with(|counter| {
+                    let current_value = *counter.borrow().get();
+                    counter.borrow_mut().set(current_value + 1)
+                })
+                .expect("cannot increment id counter");
                 let id = format!(
                     "{}-{}",
                     ic_cdk::caller().to_string(),
-                    games.0.len().to_string()
+                    id
                 );
                 let game = Game {
                     id: StableString(id.clone()),
